@@ -1,0 +1,59 @@
+{
+  "id": "metaai",
+  "name": "Meta AI",
+  "description": "Native OpenClaw provider for Meta AI chat (Muse Spark / Llama) with optional image and video generation commands. Backed by the mir-ashiq/metaai-api Python FastAPI sidecar bound to 127.0.0.1.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "sidecar": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pythonBin": {
+            "type": "string",
+            "description": "Python interpreter to use for the metaai-api sidecar (default: 'python3' on PATH)."
+          },
+          "host": {
+            "type": "string",
+            "description": "Host the metaai-api sidecar binds to. Locked to 127.0.0.1 by default; only override for explicit local-loopback variants like 'localhost' or '::1'."
+          },
+          "port": {
+            "type": "number",
+            "description": "Optional fixed port for the metaai-api sidecar. Default: ephemeral random port."
+          },
+          "openAiProxyPort": {
+            "type": "number",
+            "description": "Optional fixed port for the in-process OpenAI-compatible proxy that fronts the sidecar."
+          },
+          "idleShutdownMs": {
+            "type": "number",
+            "description": "Shut the sidecar down after this many milliseconds of inactivity. 0 disables idle shutdown."
+          },
+          "startupTimeoutMs": {
+            "type": "number",
+            "description": "Maximum time to wait for the sidecar to become healthy on first call."
+          },
+          "requestTimeoutMs": {
+            "type": "number",
+            "description": "Per-request timeout against the sidecar."
+          },
+          "extraEnv": {
+            "type": "object",
+            "description": "Extra environment variables to pass to the sidecar process. Cookie values must NOT be set here; they are read from the OpenClaw secret/env mechanism.",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      },
+      "defaultModel": {
+        "type": "string",
+        "description": "Default Meta AI model id surfaced to OpenClaw (e.g. 'metaai/muse-spark')."
+      },
+      "allowedModels": {
+        "type": "array",
+        "description": "Optional allowlist of Meta AI model ids that this plugin is permitted to register.",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

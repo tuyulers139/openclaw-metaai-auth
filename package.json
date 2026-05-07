@@ -1,0 +1,68 @@
+{
+  "name": "openclaw-metaai-auth",
+  "version": "0.1.0",
+  "description": "OpenClaw native provider plugin for Meta AI (chat with optional image/video commands) backed by the mir-ashiq/metaai-api FastAPI sidecar.",
+  "license": "MIT",
+  "author": "tuyulers139",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tuyulers139/openclaw-metaai-auth.git"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "metaai",
+    "meta-ai",
+    "muse-spark",
+    "llama",
+    "provider"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ]
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "openclaw.plugin.json",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "openclaw": "^2026.3.11",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
+  }
+}
