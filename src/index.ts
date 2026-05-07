@@ -75,11 +75,12 @@ export default function register(api: OpenClawPluginApi): void {
   });
 
   let providerRegistered = false;
+  let runtimeStartPromise: Promise<void> | undefined;
 
-  const service: OpenClawPluginService = {
-    id: "metaai-runtime",
-    start: async (_ctx: OpenClawPluginServiceContext) => {
-      api.logger.info("metaai: service 'metaai-runtime' start() called — binding openai-compat proxy");
+  const startRuntime = async (source: string): Promise<void> => {
+    if (runtimeStartPromise) return runtimeStartPromise;
+    runtimeStartPromise = (async () => {
+      api.logger.info(`metaai: runtime start requested by ${source} — binding openai-compat proxy`);
       try {
         const { baseUrl } = await proxy.listen();
         if (!providerRegistered) {
@@ -95,10 +96,20 @@ export default function register(api: OpenClawPluginApi): void {
           );
         }
       } catch (err) {
+        runtimeStartPromise = undefined;
         const e = toMetaAiError(err);
         api.logger.error(`metaai: failed to start runtime — ${redactSensitive(e.message)}`);
         throw e;
       }
+    })();
+    return runtimeStartPromise;
+  };
+
+  const service: OpenClawPluginService = {
+    id: "metaai-runtime",
+    start: async (_ctx: OpenClawPluginServiceContext) => {
+      api.logger.info("metaai: service 'metaai-runtime' start() called");
+      await startRuntime("plugin service");
     },
     stop: async () => {
       try {
@@ -115,6 +126,10 @@ export default function register(api: OpenClawPluginApi): void {
   };
   api.registerService(service);
   api.logger.info("metaai: registered service 'metaai-runtime' (start() runs on Gateway boot)");
+
+  void startRuntime("plugin register fallback").catch((err) => {
+    api.logger.error(`metaai: runtime fallback start failed — ${redactSensitive(toMetaAiError(err).message)}`);
+  });
 
   api.registerCommand(makeStatusCommand({ sidecar }));
   api.registerCommand(makeLoginCommand({ sidecar }));

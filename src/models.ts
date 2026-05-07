@@ -64,7 +64,7 @@ export function resolveModelAlias(modelId: string): KnownModelId | null {
  */
 const META_AI_MODELS: readonly ModelDefinitionConfig[] = [
   {
-    id: "metaai/muse-spark",
+    id: "muse-spark",
     name: "Meta AI — Muse Spark",
     api: "openai-completions",
     reasoning: false,
@@ -74,7 +74,7 @@ const META_AI_MODELS: readonly ModelDefinitionConfig[] = [
     maxTokens: 4_096,
   },
   {
-    id: "metaai/meta-ai",
+    id: "meta-ai",
     name: "Meta AI (alias → Muse Spark)",
     api: "openai-completions",
     reasoning: false,
@@ -84,7 +84,7 @@ const META_AI_MODELS: readonly ModelDefinitionConfig[] = [
     maxTokens: 4_096,
   },
   {
-    id: "metaai/llama",
+    id: "llama",
     name: "Meta AI — Llama (alias → Muse Spark, server-side routing)",
     api: "openai-completions",
     reasoning: false,
@@ -94,7 +94,7 @@ const META_AI_MODELS: readonly ModelDefinitionConfig[] = [
     maxTokens: 4_096,
   },
   {
-    id: "metaai/llama-3",
+    id: "llama-3",
     name: "Meta AI — Llama 3 (alias → Muse Spark, server-side routing)",
     api: "openai-completions",
     reasoning: false,
@@ -125,7 +125,7 @@ export function buildModelProviderConfig(
     ? new Set(allowedModels)
     : null;
   const models = allow
-    ? META_AI_MODELS.filter((m) => allow.has(m.id))
+    ? META_AI_MODELS.filter((m) => allow.has(m.id) || allow.has(`${META_AI_PROVIDER_ID}/${m.id}`))
     : META_AI_MODELS;
   if (models.length === 0) {
     // Defensive: never register an empty model list.

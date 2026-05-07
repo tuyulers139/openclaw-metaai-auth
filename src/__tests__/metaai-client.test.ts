@@ -50,7 +50,7 @@ describe("MetaAiClient", () => {
     const result = await client.chat({ prompt: "hello" });
     expect(captured.method).toBe("POST");
     expect(captured.url?.endsWith("/chat")).toBe(true);
-    expect(JSON.parse(captured.body ?? "{}")).toEqual({ prompt: "hello", stream: false });
+    expect(JSON.parse(captured.body ?? "{}")).toEqual({ message: "hello", stream: false });
     expect(result.message).toBe("hi from meta");
   });
 

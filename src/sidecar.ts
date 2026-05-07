@@ -338,6 +338,24 @@ export class MetaAiSidecar {
       const value = this.envSource[key];
       if (typeof value === "string" && value.length > 0) ambient[key] = value;
     }
+    // Forward upstream metaai-api tuning knobs so operators can override the
+    // GraphQL persisted-query doc_id and related routing fields without
+    // editing the venv. These are non-secret tuning values; the actual
+    // secrets (cookies, access token) flow through buildSidecarCookieEnv.
+    // META_AI_ACCESS_TOKEN is treated as sensitive but is a documented
+    // metaai-api passthrough so we forward it when the operator sets it.
+    const metaAiPassthrough = [
+      "META_AI_CHAT_DOC_ID",
+      "META_AI_CHAT_DOC_ID_ALT",
+      "META_AI_CHAT_DOC_ID_UNIFIED_FALLBACK",
+      "META_AI_CHAT_ENTRY_POINT",
+      "META_AI_CHAT_BRANCH_PATH",
+      "META_AI_ACCESS_TOKEN",
+    ];
+    for (const key of metaAiPassthrough) {
+      const value = this.envSource[key];
+      if (typeof value === "string" && value.length > 0) ambient[key] = value;
+    }
     return {
       ...ambient,
       ...this.extraEnv,

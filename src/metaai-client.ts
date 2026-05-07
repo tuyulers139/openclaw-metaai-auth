@@ -104,7 +104,7 @@ export class MetaAiClient {
 
   async chat(payload: ChatRequestPayload, timeoutMs?: number): Promise<ChatResponsePayload> {
     const body = {
-      prompt: payload.prompt,
+      message: payload.prompt,
       stream: payload.stream === true,
       ...(payload.mode ? { mode: payload.mode } : {}),
     };

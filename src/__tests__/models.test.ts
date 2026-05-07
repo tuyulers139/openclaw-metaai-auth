@@ -75,12 +75,20 @@ describe("buildModelProviderConfig", () => {
     expect(new Set(ids)).toEqual(new Set(listExposedModelIds()));
   });
 
-  it("filters models by allowedModels", () => {
+  it("filters models by full allowedModels ids while exposing provider-local ids", () => {
     const cfg = buildModelProviderConfig({
       baseUrl: "http://127.0.0.1:1/v1",
       allowedModels: ["metaai/muse-spark", "metaai/llama-3"],
     });
-    expect(cfg.models.map((m) => m.id)).toEqual(["metaai/muse-spark", "metaai/llama-3"]);
+    expect(cfg.models.map((m) => m.id)).toEqual(["muse-spark", "llama-3"]);
+  });
+
+  it("filters models by bare allowedModels ids", () => {
+    const cfg = buildModelProviderConfig({
+      baseUrl: "http://127.0.0.1:1/v1",
+      allowedModels: ["muse-spark", "llama-3"],
+    });
+    expect(cfg.models.map((m) => m.id)).toEqual(["muse-spark", "llama-3"]);
   });
 
   it("falls back to all models when allowedModels filters everything out", () => {
@@ -89,6 +97,6 @@ describe("buildModelProviderConfig", () => {
       allowedModels: ["openai/gpt-4"],
     });
     expect(cfg.models.length).toBeGreaterThan(0);
-    expect(cfg.models.map((m) => m.id)).toContain("metaai/muse-spark");
+    expect(cfg.models.map((m) => m.id)).toContain("muse-spark");
   });
 });
