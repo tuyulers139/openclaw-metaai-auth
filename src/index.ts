@@ -50,7 +50,11 @@ import { MetaAiSidecar } from "./sidecar.js";
  *    secret store) — never from plugin config and never logged.
  */
 export default function register(api: OpenClawPluginApi): void {
+  api.logger.info("metaai: register() invoked — resolving plugin config");
   const cfg = resolvePluginConfig(api.pluginConfig);
+  api.logger.info(
+    `metaai: register() resolved cfg (host=${cfg.sidecar.host} sidecarPort=${cfg.sidecar.port ?? "ephemeral"} openAiProxyPort=${cfg.sidecar.openAiProxyPort ?? "ephemeral"} defaultModel=${cfg.defaultModel})`,
+  );
 
   const sidecar = new MetaAiSidecar({
     pythonBin: cfg.sidecar.pythonBin,
@@ -75,6 +79,7 @@ export default function register(api: OpenClawPluginApi): void {
   const service: OpenClawPluginService = {
     id: "metaai-runtime",
     start: async (_ctx: OpenClawPluginServiceContext) => {
+      api.logger.info("metaai: service 'metaai-runtime' start() called — binding openai-compat proxy");
       try {
         const { baseUrl } = await proxy.listen();
         if (!providerRegistered) {
@@ -109,6 +114,7 @@ export default function register(api: OpenClawPluginApi): void {
     },
   };
   api.registerService(service);
+  api.logger.info("metaai: registered service 'metaai-runtime' (start() runs on Gateway boot)");
 
   api.registerCommand(makeStatusCommand({ sidecar }));
   api.registerCommand(makeLoginCommand({ sidecar }));
