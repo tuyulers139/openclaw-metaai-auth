@@ -8,6 +8,13 @@ import type {
 // directly from the API surface we already have access to. This avoids
 // reaching into internal subpaths of the openclaw package.
 type ProviderPlugin = Parameters<OpenClawPluginApi["registerProvider"]>[0];
+type PluginRegistrationMode =
+  | "full"
+  | "discovery"
+  | "tool-discovery"
+  | "setup-only"
+  | "setup-runtime"
+  | "cli-metadata";
 
 /** Subset of `OpenClawPluginDefinition` we care about. The SDK itself does
  *  not re-export the full definition type from its public entrypoint, so we
@@ -19,6 +26,14 @@ export type OpenClawPluginDefinition = {
   description: string;
   register: (api: OpenClawPluginApi) => void | Promise<void>;
 };
+
+export function shouldStartRuntimeDuringRegister(mode: PluginRegistrationMode | undefined): boolean {
+  return mode === undefined || mode === "full";
+}
+
+function getPluginRegistrationMode(api: OpenClawPluginApi): PluginRegistrationMode | undefined {
+  return (api as { registrationMode?: PluginRegistrationMode }).registrationMode;
+}
 
 import { makeImageCommand } from "./commands/image.js";
 import { makeLoginCommand } from "./commands/login.js";
@@ -127,9 +142,14 @@ export default function register(api: OpenClawPluginApi): void {
   api.registerService(service);
   api.logger.info("metaai: registered service 'metaai-runtime' (start() runs on Gateway boot)");
 
-  void startRuntime("plugin register fallback").catch((err) => {
-    api.logger.error(`metaai: runtime fallback start failed — ${redactSensitive(toMetaAiError(err).message)}`);
-  });
+  const registrationMode = getPluginRegistrationMode(api);
+  if (shouldStartRuntimeDuringRegister(registrationMode)) {
+    void startRuntime("plugin register fallback").catch((err) => {
+      api.logger.error(`metaai: runtime fallback start failed — ${redactSensitive(toMetaAiError(err).message)}`);
+    });
+  } else {
+    api.logger.debug?.(`metaai: skipping runtime fallback start in ${registrationMode} registration mode`);
+  }
 
   api.registerCommand(makeStatusCommand({ sidecar }));
   api.registerCommand(makeLoginCommand({ sidecar }));
