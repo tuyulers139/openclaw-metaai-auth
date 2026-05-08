@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildProviderPlugin, definition, META_AI_PROVIDER_ID } from "../index.js";
+import {
+  buildProviderPlugin,
+  definition,
+  META_AI_PROVIDER_ID,
+  shouldStartRuntimeDuringRegister,
+} from "../index.js";
 
 describe("buildProviderPlugin", () => {
   it("returns a ProviderPlugin with the metaai id and required env vars", () => {
@@ -41,5 +46,15 @@ describe("plugin definition", () => {
     expect(definition.id).toBe("metaai");
     expect(definition.name).toBe("Meta AI");
     expect(typeof definition.register).toBe("function");
+  });
+});
+
+describe("shouldStartRuntimeDuringRegister", () => {
+  it("only starts runtime during full activation or legacy API mode", () => {
+    expect(shouldStartRuntimeDuringRegister("full")).toBe(true);
+    expect(shouldStartRuntimeDuringRegister(undefined)).toBe(true);
+    expect(shouldStartRuntimeDuringRegister("discovery")).toBe(false);
+    expect(shouldStartRuntimeDuringRegister("tool-discovery")).toBe(false);
+    expect(shouldStartRuntimeDuringRegister("cli-metadata")).toBe(false);
   });
 });

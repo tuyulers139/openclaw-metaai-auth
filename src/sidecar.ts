@@ -338,10 +338,53 @@ export class MetaAiSidecar {
       const value = this.envSource[key];
       if (typeof value === "string" && value.length > 0) ambient[key] = value;
     }
+    // Forward upstream metaai-api tuning knobs so operators can override the
+    // GraphQL persisted-query doc_id and related routing fields without
+    // editing the venv. These are non-secret tuning values; the actual
+    // secrets (cookies, access token) flow through buildSidecarCookieEnv.
+    // META_AI_ACCESS_TOKEN is treated as sensitive but is a documented
+    // metaai-api passthrough so we forward it when the operator sets it.
+    const metaAiPassthrough = [
+      "META_AI_CHAT_DOC_ID",
+      "META_AI_CHAT_DOC_ID_ALT",
+      "META_AI_CHAT_DOC_ID_UNIFIED_FALLBACK",
+      "META_AI_CHAT_ENTRY_POINT",
+      "META_AI_CHAT_BRANCH_PATH",
+      "META_AI_ACCESS_TOKEN",
+      // Facebook cross-site session cookies, used by the Playwright sidecar
+      // when the operator authenticates to meta.ai via Facebook. All four
+      // are sensitive and must be redacted from logs (handled in redact.ts
+      // via the `META_AI_` prefix masking rule).
+      "META_AI_FB_C_USER",
+      "META_AI_FB_XS",
+      "META_AI_FB_FR",
+      "META_AI_FB_DATR",
+      // Playwright sidecar runtime knobs (non-sensitive). Forwarded so the
+      // operator can flip them without re-installing the venv.
+      "META_AI_HEADLESS",
+      "META_AI_DEBUG_DIR",
+      "META_AI_SEND_TIMEOUT_MS",
+      "META_AI_STORAGE_STATE",
+      "META_AI_AUTO_LOGIN_TIMEOUT_MS",
+      "META_AI_PLAYWRIGHT_REPLY_TIMEOUT",
+      "METAAI_PLAYWRIGHT_REPLY_TIMEOUT",
+    ];
+    for (const key of metaAiPassthrough) {
+      const value = this.envSource[key];
+      if (typeof value === "string" && value.length > 0) ambient[key] = value;
+    }
+    const derivedReplyTimeout = Math.max(1, Math.floor((this.requestTimeoutMs - 5_000) / 1000));
+    const playwrightReplyTimeout =
+      ambient.META_AI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      ambient.METAAI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      this.extraEnv.META_AI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      this.extraEnv.METAAI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      String(derivedReplyTimeout);
     return {
       ...ambient,
       ...this.extraEnv,
       ...buildSidecarCookieEnv(cookies),
+      META_AI_PLAYWRIGHT_REPLY_TIMEOUT: playwrightReplyTimeout,
       // Force unbuffered I/O so we surface stdout/stderr promptly.
       PYTHONUNBUFFERED: "1",
       // Defensive: tell uvicorn it must not bind to non-loopback even if the

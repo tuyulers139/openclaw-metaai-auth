@@ -68,6 +68,9 @@ describe("MetaAiSidecar", () => {
         AWS_SECRET_ACCESS_KEY: "should-not-leak",
         META_AI_DATR: "datr-value",
         META_AI_ECTO_1_SESS: "ecto-value",
+        META_AI_CHAT_DOC_ID: "fresh-doc-id",
+        META_AI_CHAT_ENTRY_POINT: "KADABRA__OVERRIDE",
+        META_AI_ACCESS_TOKEN: "ecto1:override-token",
       },
       spawnImpl: spawnImpl as unknown as MetaAiSidecar["spawnImpl"],
     } as unknown as ConstructorParameters<typeof MetaAiSidecar>[0]);
@@ -88,6 +91,10 @@ describe("MetaAiSidecar", () => {
     expect(captured.env?.HOME).toBe("/home/test");
     expect(captured.env?.UNRELATED_SECRET).toBeUndefined();
     expect(captured.env?.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    // Upstream metaai-api tuning passthrough
+    expect(captured.env?.META_AI_CHAT_DOC_ID).toBe("fresh-doc-id");
+    expect(captured.env?.META_AI_CHAT_ENTRY_POINT).toBe("KADABRA__OVERRIDE");
+    expect(captured.env?.META_AI_ACCESS_TOKEN).toBe("ecto1:override-token");
     // Defensive UVICORN_HOST is set
     expect(captured.env?.UVICORN_HOST).toBe("127.0.0.1");
   });

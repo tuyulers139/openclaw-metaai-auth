@@ -8,6 +8,13 @@ import type {
 // directly from the API surface we already have access to. This avoids
 // reaching into internal subpaths of the openclaw package.
 type ProviderPlugin = Parameters<OpenClawPluginApi["registerProvider"]>[0];
+type PluginRegistrationMode =
+  | "full"
+  | "discovery"
+  | "tool-discovery"
+  | "setup-only"
+  | "setup-runtime"
+  | "cli-metadata";
 
 /** Subset of `OpenClawPluginDefinition` we care about. The SDK itself does
  *  not re-export the full definition type from its public entrypoint, so we
@@ -19,6 +26,14 @@ export type OpenClawPluginDefinition = {
   description: string;
   register: (api: OpenClawPluginApi) => void | Promise<void>;
 };
+
+export function shouldStartRuntimeDuringRegister(mode: PluginRegistrationMode | undefined): boolean {
+  return mode === undefined || mode === "full";
+}
+
+function getPluginRegistrationMode(api: OpenClawPluginApi): PluginRegistrationMode | undefined {
+  return (api as { registrationMode?: PluginRegistrationMode }).registrationMode;
+}
 
 import { makeImageCommand } from "./commands/image.js";
 import { makeLoginCommand } from "./commands/login.js";
@@ -75,11 +90,12 @@ export default function register(api: OpenClawPluginApi): void {
   });
 
   let providerRegistered = false;
+  let runtimeStartPromise: Promise<void> | undefined;
 
-  const service: OpenClawPluginService = {
-    id: "metaai-runtime",
-    start: async (_ctx: OpenClawPluginServiceContext) => {
-      api.logger.info("metaai: service 'metaai-runtime' start() called — binding openai-compat proxy");
+  const startRuntime = async (source: string): Promise<void> => {
+    if (runtimeStartPromise) return runtimeStartPromise;
+    runtimeStartPromise = (async () => {
+      api.logger.info(`metaai: runtime start requested by ${source} — binding openai-compat proxy`);
       try {
         const { baseUrl } = await proxy.listen();
         if (!providerRegistered) {
@@ -95,10 +111,20 @@ export default function register(api: OpenClawPluginApi): void {
           );
         }
       } catch (err) {
+        runtimeStartPromise = undefined;
         const e = toMetaAiError(err);
         api.logger.error(`metaai: failed to start runtime — ${redactSensitive(e.message)}`);
         throw e;
       }
+    })();
+    return runtimeStartPromise;
+  };
+
+  const service: OpenClawPluginService = {
+    id: "metaai-runtime",
+    start: async (_ctx: OpenClawPluginServiceContext) => {
+      api.logger.info("metaai: service 'metaai-runtime' start() called");
+      await startRuntime("plugin service");
     },
     stop: async () => {
       try {
@@ -115,6 +141,15 @@ export default function register(api: OpenClawPluginApi): void {
   };
   api.registerService(service);
   api.logger.info("metaai: registered service 'metaai-runtime' (start() runs on Gateway boot)");
+
+  const registrationMode = getPluginRegistrationMode(api);
+  if (shouldStartRuntimeDuringRegister(registrationMode)) {
+    void startRuntime("plugin register fallback").catch((err) => {
+      api.logger.error(`metaai: runtime fallback start failed — ${redactSensitive(toMetaAiError(err).message)}`);
+    });
+  } else {
+    api.logger.debug?.(`metaai: skipping runtime fallback start in ${registrationMode} registration mode`);
+  }
 
   api.registerCommand(makeStatusCommand({ sidecar }));
   api.registerCommand(makeLoginCommand({ sidecar }));

@@ -2,6 +2,68 @@
   "id": "metaai",
   "name": "Meta AI",
   "description": "Native OpenClaw provider for Meta AI chat (Muse Spark / Llama) with optional image and video generation commands. Backed by the mir-ashiq/metaai-api Python FastAPI sidecar bound to 127.0.0.1.",
+  "activation": {
+    "onStartup": true,
+    "onProviders": [
+      "metaai"
+    ],
+    "onCommands": [
+      "metaai-status",
+      "metaai-login",
+      "metaai-image",
+      "metaai-video"
+    ],
+    "onCapabilities": [
+      "provider"
+    ]
+  },
+  "providers": [
+    "metaai"
+  ],
+  "providerRequest": {
+    "providers": {
+      "metaai": {
+        "family": "metaai"
+      }
+    }
+  },
+  "setup": {
+    "providers": [
+      {
+        "id": "metaai",
+        "authMethods": [
+          "cookie"
+        ],
+        "envVars": [
+          "META_AI_DATR",
+          "META_AI_ECTO_1_SESS",
+          "META_AI_ABRA_SESS"
+        ]
+      }
+    ]
+  },
+  "providerAuthEnvVars": {
+    "metaai": [
+      "META_AI_DATR",
+      "META_AI_ECTO_1_SESS",
+      "META_AI_ABRA_SESS"
+    ]
+  },
+  "providerAuthChoices": [
+    {
+      "provider": "metaai",
+      "method": "cookie",
+      "choiceId": "metaai-cookies",
+      "choiceLabel": "Meta AI browser cookies",
+      "choiceHint": "Reuse browser cookies from an authenticated meta.ai session"
+    }
+  ],
+  "commandAliases": [
+    "metaai-status",
+    "metaai-login",
+    "metaai-image",
+    "metaai-video"
+  ],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
