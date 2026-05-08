@@ -11,9 +11,11 @@ per conversation, so this matches reality.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Optional
 
 from playwright.async_api import (
@@ -29,10 +31,36 @@ logger = logging.getLogger(__name__)
 
 META_AI_URL = "https://www.meta.ai/"
 
-# Selectors confirmed against meta.ai ~2026-05-07. Adjust if Meta moves the DOM.
-COMPOSER_SEL = 'div[data-testid="composer-input"][role="textbox"][contenteditable="true"]'
-SEND_BTN_SEL = 'button[aria-label="Send"]'
+# Selectors confirmed against meta.ai ~2026-05-07/08. Meta varies between a
+# rich contenteditable composer (logged-in users, certain locales) and a plain
+# <input type="text"> (unauth landing, recent rollouts). Both are tried.
+COMPOSER_CANDIDATES: tuple[str, ...] = (
+    'div[data-testid="composer-input"][role="textbox"][contenteditable="true"]',
+    'div[contenteditable="true"][role="textbox"]',
+    'input[type="text"][placeholder*="Ask Meta AI" i]',
+    'textarea[placeholder*="Ask Meta AI" i]',
+)
+COMPOSER_SEL = COMPOSER_CANDIDATES[0]
+# If this selector matches the page, the user is not logged in and chat
+# features are degraded (no auth-only models, possible rate limits).
+LOGIN_REQUIRED_SEL = '[data-testid="login-button"]'
+# Candidate Send-button selectors, tried in order. Meta varies the aria-label
+# by locale and occasionally A/B-tests the button (icon-only vs labeled).
+SEND_BTN_CANDIDATES: tuple[str, ...] = (
+    'button[aria-label="Send"]',
+    'button[aria-label="Send Message"]',
+    'button[aria-label*="Send" i]',
+    'button[data-testid="send-button"]',
+    'form button[type="submit"]:not([disabled])',
+    'div[data-testid="composer-input"] ~ button',
+)
+# Backwards-compat alias (kept for any external callers/tests that import it).
+SEND_BTN_SEL = SEND_BTN_CANDIDATES[0]
 STOP_BTN_SEL = "button[aria-label*='Stop' i]"
+
+DEBUG_DIR = Path(os.environ.get("META_AI_DEBUG_DIR", "/tmp/metaai-playwright-debug"))
+HEADLESS = os.environ.get("META_AI_HEADLESS", "1") not in ("0", "false", "False", "")
+SEND_TIMEOUT_MS = int(os.environ.get("META_AI_SEND_TIMEOUT_MS", "8000"))
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
@@ -89,11 +117,16 @@ class BrowserSession:
             logger.info("metaai-playwright: starting Chromium…")
             self._pw = await async_playwright().start()
             self._browser = await self._pw.chromium.launch(
-                headless=True,
+                headless=HEADLESS,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--no-sandbox",
                 ],
+            )
+            logger.info(
+                "metaai-playwright: chromium launched (headless=%s, debug_dir=%s)",
+                HEADLESS,
+                DEBUG_DIR,
             )
             self._ctx = await self._browser.new_context(
                 viewport={"width": 1280, "height": 900},
@@ -127,6 +160,107 @@ class BrowserSession:
     async def health(self) -> bool:
         return bool(self._ready and self._page and not self._page.is_closed())
 
+    async def _dump_debug(self, label: str) -> Optional[Path]:
+        """Save screenshot + DOM HTML when a selector wait fails.
+
+        Returns the directory written to (or None on failure). Cookies and
+        secrets are not present in screenshots/DOM dumps from meta.ai's chat
+        surface; the dump is purposely shallow (no localStorage / cookies).
+        """
+        if self._page is None:
+            return None
+        try:
+            DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+            ts = _dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+            slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", label).strip("-") or "dump"
+            sub = DEBUG_DIR / f"{ts}-{slug}"
+            sub.mkdir(parents=True, exist_ok=True)
+            await self._page.screenshot(path=str(sub / "page.png"), full_page=True)
+            html = await self._page.content()
+            (sub / "page.html").write_text(html, encoding="utf-8")
+            url = self._page.url
+            (sub / "url.txt").write_text(url + "\n", encoding="utf-8")
+            logger.warning("metaai-playwright: debug dump written to %s", sub)
+            return sub
+        except Exception as exc:  # noqa: BLE001
+            logger.error("metaai-playwright: debug dump failed: %s", exc)
+            return None
+
+    async def _check_login_state(self) -> bool:
+        """Return True if the page indicates the user is NOT logged in.
+
+        Meta AI renders a 'Log in / Sign up' CTA when cookies are invalid or
+        expired. Detecting this early gives a clear error rather than a
+        misleading 'composer not found' timeout.
+        """
+        if self._page is None:
+            return False
+        try:
+            el = await self._page.query_selector(LOGIN_REQUIRED_SEL)
+            return el is not None
+        except Exception:  # noqa: BLE001
+            return False
+
+    async def _wait_for_composer(self, timeout_ms: int = 20_000):
+        """Try each composer candidate; return the first visible match.
+
+        Raises a clear RuntimeError when the page is the unauth landing
+        (login button present), so operators see 'cookies invalid' instead
+        of a generic Playwright timeout.
+        """
+        assert self._page is not None
+        page = self._page
+        per_candidate_ms = max(1500, timeout_ms // max(1, len(COMPOSER_CANDIDATES)))
+        last_exc: Optional[Exception] = None
+        for sel in COMPOSER_CANDIDATES:
+            try:
+                el = await page.wait_for_selector(
+                    sel, timeout=per_candidate_ms, state="visible"
+                )
+                if el is not None:
+                    logger.info("metaai-playwright: composer matched selector %r", sel)
+                    return el
+            except PWTimeout as exc:
+                last_exc = exc
+                continue
+        # No composer found — figure out why before raising.
+        if await self._check_login_state():
+            await self._dump_debug("login-required")
+            raise RuntimeError(
+                "Meta AI page shows login CTA — cookies (META_AI_DATR / "
+                "META_AI_ECTO_1_SESS / optionally META_AI_ABRA_SESS) are "
+                "invalid or expired. Re-capture from a logged-in browser."
+            )
+        await self._dump_debug("composer-not-found")
+        raise last_exc or PWTimeout(
+            f"Composer not found via any of {len(COMPOSER_CANDIDATES)} selectors"
+        )
+
+    async def _wait_for_send_button(self, timeout_ms: int = SEND_TIMEOUT_MS):
+        """Try each Send-button candidate; return the first visible match.
+
+        Raises PWTimeout if none match. Dumps debug artefacts on failure.
+        """
+        assert self._page is not None
+        page = self._page
+        per_candidate_ms = max(500, timeout_ms // max(1, len(SEND_BTN_CANDIDATES)))
+        last_exc: Optional[Exception] = None
+        for sel in SEND_BTN_CANDIDATES:
+            try:
+                el = await page.wait_for_selector(
+                    sel, timeout=per_candidate_ms, state="visible"
+                )
+                if el is not None:
+                    logger.info("metaai-playwright: send-button matched selector %r", sel)
+                    return el
+            except PWTimeout as exc:
+                last_exc = exc
+                continue
+        await self._dump_debug("send-button-not-found")
+        raise last_exc or PWTimeout(
+            f"Send button not found via any of {len(SEND_BTN_CANDIDATES)} selectors"
+        )
+
     async def _navigate_home(self) -> None:
         assert self._page is not None
         await self._page.goto(META_AI_URL, timeout=45_000, wait_until="domcontentloaded")
@@ -135,10 +269,10 @@ class BrowserSession:
             await self._page.wait_for_load_state("networkidle", timeout=30_000)
         except PWTimeout:
             logger.warning("networkidle timeout; continuing anyway")
-        # Wait for composer to attach (it's a contenteditable div, not the
-        # hidden textarea). Visibility is checked separately because the
-        # element exists in the DOM before being mounted.
-        await self._page.wait_for_selector(COMPOSER_SEL, timeout=20_000, state="visible")
+        # Wait for composer to attach. Meta varies between contenteditable
+        # div (logged-in) and plain <input> (unauth landing); _wait_for_composer
+        # tries all candidates and detects login-required state.
+        await self._wait_for_composer(timeout_ms=20_000)
 
     async def _start_new_conversation(self) -> None:
         """Force a fresh chat by reloading the home route.
@@ -154,7 +288,7 @@ class BrowserSession:
             await self._page.wait_for_load_state("networkidle", timeout=20_000)
         except PWTimeout:
             pass
-        await self._page.wait_for_selector(COMPOSER_SEL, timeout=20_000, state="visible")
+        await self._wait_for_composer(timeout_ms=20_000)
 
     async def send_chat(
         self,
@@ -187,13 +321,13 @@ class BrowserSession:
         # Focus composer and type. We type with `keyboard.type` rather than
         # `fill` because the composer is a contenteditable rich-text field;
         # `fill` does not always trigger React's input handlers.
-        composer = await page.wait_for_selector(COMPOSER_SEL, timeout=15_000, state="visible")
+        composer = await self._wait_for_composer(timeout_ms=15_000)
         await composer.click()
         await page.keyboard.type(message, delay=5)
         # Tiny settle to let the Send button enable.
-        await page.wait_for_timeout(150)
+        await page.wait_for_timeout(250)
 
-        send_btn = await page.wait_for_selector(SEND_BTN_SEL, timeout=5_000, state="visible")
+        send_btn = await self._wait_for_send_button()
         if not await send_btn.is_enabled():
             # Some long inputs need a beat for the validation pass.
             await page.wait_for_timeout(500)
