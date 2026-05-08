@@ -34,6 +34,18 @@ app = FastAPI(
 )
 
 
+def _reply_timeout_s() -> int:
+    raw = (
+        os.environ.get("META_AI_PLAYWRIGHT_REPLY_TIMEOUT")
+        or os.environ.get("METAAI_PLAYWRIGHT_REPLY_TIMEOUT")
+        or "75"
+    )
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 75
+
+
 class ChatRequest(BaseModel):
     message: str
     stream: bool = False
@@ -99,7 +111,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
         text = await session.send_chat(
             body.message,
             new_conversation=body.new_conversation,
-            wait_timeout_s=int(os.environ.get("METAAI_PLAYWRIGHT_REPLY_TIMEOUT", "120")),
+            wait_timeout_s=_reply_timeout_s(),
         )
     except Exception as exc:
         logger.exception("metaai-playwright: chat turn failed")

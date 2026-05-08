@@ -497,6 +497,38 @@ class BrowserSession:
             f"Send button not found via any of {len(SEND_BTN_CANDIDATES)} selectors"
         )
 
+    async def _latest_assistant_text(self) -> str:
+        """Return the latest assistant message item text, if Meta rendered one."""
+        if self._page is None:
+            return ""
+        try:
+            text = await self._page.evaluate(
+                """() => {
+                  const items = Array.from(document.querySelectorAll('[data-message-item="true"]'));
+                  const assistants = items.filter((el) => {
+                    const id = el.getAttribute('data-message-id') || '';
+                    return id.endsWith('_assistant');
+                  });
+                  const latest = assistants[assistants.length - 1];
+                  return latest ? (latest.innerText || '') : '';
+                }"""
+            )
+            return text if isinstance(text, str) else ""
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("metaai-playwright: latest assistant query failed: %s", exc)
+            return ""
+
+    async def _recover_after_failed_turn(self) -> None:
+        """Best-effort recovery when Meta leaves a turn stuck in Thinking."""
+        if self._page is None:
+            return
+        try:
+            await self._page.goto(META_AI_URL, timeout=45_000, wait_until="domcontentloaded")
+            await self._page.wait_for_timeout(1000)
+            logger.warning("metaai-playwright: reset page after failed turn")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("metaai-playwright: failed-turn recovery skipped: %s", exc)
+
     async def _navigate_home(self) -> None:
         assert self._page is not None
         await self._page.goto(META_AI_URL, timeout=45_000, wait_until="domcontentloaded")
@@ -599,19 +631,27 @@ class BrowserSession:
                     break
                 await page.wait_for_timeout(1000)
 
-        # Some Meta UI variants do not render a Stop button. In that case,
-        # poll the visible page text until the diff contains actual assistant
-        # content instead of transient chrome such as "Thinking".
+        # Some Meta UI variants do not render a Stop button. Poll the latest
+        # assistant message item first (preferred), then fall back to body diff
+        # extraction. This avoids anchoring on duplicate prompt text that Meta
+        # keeps in hidden/virtualised DOM nodes.
         last_reply = ""
         for _ in range(max(1, wait_timeout_s)):
             await page.wait_for_timeout(1000)
+            assistant_text = await self._latest_assistant_text()
+            last_reply = _strip_ui_chrome(assistant_text)
+            if last_reply:
+                return last_reply
             after_text: str = await page.evaluate("() => document.body.innerText")
             last_reply = self._diff_assistant_reply(before_text, after_text, message)
             if last_reply:
                 return last_reply
 
         await self._dump_debug("empty-assistant-response")
-        return last_reply
+        await self._recover_after_failed_turn()
+        raise RuntimeError(
+            f"Meta AI remained in Thinking state for {wait_timeout_s}s; conversation reset."
+        )
 
     @staticmethod
     def _diff_assistant_reply(before: str, after: str, message: str) -> str:
@@ -666,9 +706,12 @@ _CHROME_PREFIXES = (
     "Ctrl+",
     "Edit message",
     "Regenerate",
+    "Regenerate response",
     "Copy",
     "Like",
     "Dislike",
+    "Good response",
+    "Bad response",
     "Share",
 )
 

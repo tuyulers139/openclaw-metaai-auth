@@ -366,15 +366,25 @@ export class MetaAiSidecar {
       "META_AI_SEND_TIMEOUT_MS",
       "META_AI_STORAGE_STATE",
       "META_AI_AUTO_LOGIN_TIMEOUT_MS",
+      "META_AI_PLAYWRIGHT_REPLY_TIMEOUT",
+      "METAAI_PLAYWRIGHT_REPLY_TIMEOUT",
     ];
     for (const key of metaAiPassthrough) {
       const value = this.envSource[key];
       if (typeof value === "string" && value.length > 0) ambient[key] = value;
     }
+    const derivedReplyTimeout = Math.max(1, Math.floor((this.requestTimeoutMs - 5_000) / 1000));
+    const playwrightReplyTimeout =
+      ambient.META_AI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      ambient.METAAI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      this.extraEnv.META_AI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      this.extraEnv.METAAI_PLAYWRIGHT_REPLY_TIMEOUT ??
+      String(derivedReplyTimeout);
     return {
       ...ambient,
       ...this.extraEnv,
       ...buildSidecarCookieEnv(cookies),
+      META_AI_PLAYWRIGHT_REPLY_TIMEOUT: playwrightReplyTimeout,
       // Force unbuffered I/O so we surface stdout/stderr promptly.
       PYTHONUNBUFFERED: "1",
       // Defensive: tell uvicorn it must not bind to non-loopback even if the
