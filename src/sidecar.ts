@@ -351,6 +351,21 @@ export class MetaAiSidecar {
       "META_AI_CHAT_ENTRY_POINT",
       "META_AI_CHAT_BRANCH_PATH",
       "META_AI_ACCESS_TOKEN",
+      // Facebook cross-site session cookies, used by the Playwright sidecar
+      // when the operator authenticates to meta.ai via Facebook. All four
+      // are sensitive and must be redacted from logs (handled in redact.ts
+      // via the `META_AI_` prefix masking rule).
+      "META_AI_FB_C_USER",
+      "META_AI_FB_XS",
+      "META_AI_FB_FR",
+      "META_AI_FB_DATR",
+      // Playwright sidecar runtime knobs (non-sensitive). Forwarded so the
+      // operator can flip them without re-installing the venv.
+      "META_AI_HEADLESS",
+      "META_AI_DEBUG_DIR",
+      "META_AI_SEND_TIMEOUT_MS",
+      "META_AI_STORAGE_STATE",
+      "META_AI_AUTO_LOGIN_TIMEOUT_MS",
     ];
     for (const key of metaAiPassthrough) {
       const value = this.envSource[key];
